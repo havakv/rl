@@ -16,11 +16,11 @@ decay_rate = 0.99 # decay factor for RMSProp leaky sum of grad^2
 resume = False # resume from previous checkpoint?
 render = False
 # resume = True # resume from previous checkpoint?
-render = True
+# render = True
 
 # model initialization
-# D = 80 * 80 # input dimensionality: 80x80 grid
-D = 86 * 86 # input dimensionality: 80x80 grid
+D = 80 * 80 # input dimensionality: 80x80 grid
+# D = 86 * 86 # input dimensionality: 80x80 grid
 if resume:
     model = pickle.load(open('save.p', 'rb'))
 else:
@@ -35,13 +35,14 @@ def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x)) # sigmoid "squashing" function to interval [0,1]
 
 def prepro(I):
-    """ NOT TURE:prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector """
-    I = I[:, 132:900, :] # crop
-    I = I[::9,::9,0] # downsample by factor of 2
-    I[I == 144] = 0 # erase background (background type 1)
-    I[I == 109] = 0 # erase background (background type 2)
-    I[I != 0] = 1 # everything else (paddles, ball) just set to 1
-    return I.astype(np.float).ravel()
+  """ prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector """
+  I = I[:210, :160, :]
+  I = I[35:195] # crop
+  I = I[::2,::2,0] # downsample by factor of 2
+  I[I == 144] = 0 # erase background (background type 1)
+  I[I == 109] = 0 # erase background (background type 2)
+  I[I != 0] = 1 # everything else (paddles, ball) just set to 1
+  return I.astype(np.float).ravel()
 
 def discount_rewards(r):
     """ take 1D float array of rewards and compute discounted reward """
@@ -68,6 +69,14 @@ def policy_backward(eph, epdlogp):
     dW1 = np.dot(dh.T, epx)
     return {'W1':dW1, 'W2':dW2}
 
+def store_all_at_iteration(prefix='', ostfix=''):
+    """Store all environment variables."""
+    pickle.dump(observation, open('observation.p', 'wb'))
+    pickle.dump(reward, open('reward.p', 'wb'))
+    pickle.dump(done, open('done.p', 'wb'))
+    pickle.dump(info, open('info.p', 'wb'))
+
+
 # env = gym.make("Pong-v0")
 env = gym.make("gym-core.Pong-v3")
 env.configure(remotes=1)
@@ -82,8 +91,9 @@ episode_number = 0
 # Initial action to pass while we wait for the environment
 action = [[('KeyEvent', 'ArrowUp', False)] for ob in observation] 
 
-nb_it = 0
+nb_it = -1
 while True:
+    nb_it += 1
     if render: env.render()
 
     # Make sure we have an observation. If not loop.
@@ -91,8 +101,8 @@ while True:
         observation, reward, done, info = env.step(action)
         continue
 
-    if nb_it == 0: pickle.dump(observation, open('observation.p', 'wb'))
-    nb_it += 1
+    # if nb_it == 100: store_all_at_iteration()
+    # if nb_it == 100: break
     # preprocess the observation, set input to network to be difference image
     cur_x = prepro(observation[0]['vision'])
     x = cur_x - prev_x if prev_x is not None else np.zeros(D)
@@ -103,8 +113,8 @@ while True:
     which_action = 2 if np.random.uniform() < aprob else 3 # roll the dice!
     action = []
     for ob in observation:
-        action.append([('KeyEvent', 'ArrowLeft', which_action==2),
-                       ('KeyEvent', 'ArrowRight', which_action==3)])
+        action.append([('KeyEvent', 'ArrowLeft', which_action==3),
+                       ('KeyEvent', 'ArrowRight', which_action==2)])
 
 
 
@@ -117,51 +127,45 @@ while True:
     # step the environment and get new measurements
     observation, reward, done, info = env.step(action)
 
-    # nb_it += 1
-    # if nb_it == 3:
-        # pickle.dump(observation, open('observation.p', 'wb'))
-        # pickle.dump(reward, open('reward.p', 'wb'))
-        # pickle.dump(done, open('done.p', 'wb'))
-        # pickle.dump(info, open('info.p', 'wb'))
-    # reward_sum += reward
+    reward_sum += reward[0]
 
-    # drs.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
+    drs.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
 
-    # if done: # an episode finished
-      # episode_number += 1
+    if done[0]: # an episode finished
+        episode_number += 1
 
-      # # stack together all inputs, hidden states, action gradients, and rewards for this episode
-      # epx = np.vstack(xs)
-      # eph = np.vstack(hs)
-      # epdlogp = np.vstack(dlogps)
-      # epr = np.vstack(drs)
-      # xs,hs,dlogps,drs = [],[],[],[] # reset array memory
+        # stack together all inputs, hidden states, action gradients, and rewards for this episode
+        epx = np.vstack(xs)
+        eph = np.vstack(hs)
+        epdlogp = np.vstack(dlogps)
+        epr = np.vstack(drs)
+        xs,hs,dlogps,drs = [],[],[],[] # reset array memory
 
-      # # compute the discounted reward backwards through time
-      # discounted_epr = discount_rewards(epr)
-      # # standardize the rewards to be unit normal (helps control the gradient estimator variance)
-      # discounted_epr -= np.mean(discounted_epr)
-      # discounted_epr /= np.std(discounted_epr)
+        # compute the discounted reward backwards through time
+        discounted_epr = discount_rewards(epr)
+        # standardize the rewards to be unit normal (helps control the gradient estimator variance)
+        discounted_epr -= np.mean(discounted_epr)
+        discounted_epr /= np.std(discounted_epr)
 
-      # epdlogp *= discounted_epr # modulate the gradient with advantage (PG magic happens right here.)
-      # grad = policy_backward(eph, epdlogp)
-      # for k in model: grad_buffer[k] += grad[k] # accumulate grad over batch
+        epdlogp *= discounted_epr # modulate the gradient with advantage (PG magic happens right here.)
+        grad = policy_backward(eph, epdlogp)
+        for k in model: grad_buffer[k] += grad[k] # accumulate grad over batch
 
-      # # perform rmsprop parameter update every batch_size episodes
-      # if episode_number % batch_size == 0:
-        # for k,v in model.items():
-          # g = grad_buffer[k] # gradient
-          # rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
-          # model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
-          # grad_buffer[k] = np.zeros_like(v) # reset batch gradient buffer
+        # perform rmsprop parameter update every batch_size episodes
+        if episode_number % batch_size == 0:
+            for k,v in model.items():
+                g = grad_buffer[k] # gradient
+                rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
+                model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
+                grad_buffer[k] = np.zeros_like(v) # reset batch gradient buffer
 
-      # # boring book-keeping
-      # running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
-      # print('resetting env. episode reward total was %f. running mean: %f' % (reward_sum, running_reward))
-      # if episode_number % 100 == 0: pickle.dump(model, open('save.p', 'wb'))
-      # reward_sum = 0
-      # observation = env.reset() # reset env
-      # prev_x = None
+        # boring book-keeping
+        running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
+        print('resetting env. episode reward total was %f. running mean: %f' % (reward_sum, running_reward))
+        if episode_number % 100 == 0: pickle.dump(model, open('save.p', 'wb'))
+        reward_sum = 0
+        observation = env.reset() # reset env
+        prev_x = None
 
-    # if reward != 0: # Pong has either +1 or -1 reward exactly when game ends.
-      # print(('ep %d: game finished, reward: %f' % (episode_number, reward)) + ('' if reward == -1 else ' !!!!!!!!'))
+    if   reward[0] != 0: # Pong has either +1 or -1 reward exactly when game ends.
+        print(('ep %d: game finished, reward: %f' % (episode_number, reward[0])) + ('' if reward[0] == -1 else ' !!!!!!!!'))
