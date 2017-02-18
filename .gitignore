@@ -6,6 +6,9 @@ __pycache__/
 # Folders
 repos
 
+# Pickled files
+*.p
+
 # C extensions
 *.so
 
