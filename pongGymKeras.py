@@ -23,7 +23,7 @@ render = False
 
 # model initialization
 D = 80 * 80 # input dimensionality: 80x80 grid
-model_file_name = 'pong_gym_keras_mlp.h5'
+model_file_name = 'pong_gym_keras_mlp2.h5'
 # weight_file_name = 'pong_gym_keras.p'
 # if resume:
     # model = pickle.load(open(weight_file_name, 'rb'))
@@ -88,7 +88,8 @@ def get_dense_model():
     h = Dense(H, activation='relu')(inp)
     out = Dense(1, activation='sigmoid')(h)
     model = Model(inp, out)
-    optim = RMSprop(learning_rate, decay=decay_rate)
+    # optim = RMSprop(learning_rate, decay=decay_rate)
+    optim = RMSprop(learning_rate)
     model.compile(optim, 'binary_crossentropy')
     return model
 
